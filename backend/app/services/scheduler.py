@@ -3,7 +3,7 @@
 Runs one composite daily job under a single Tushare session:
   1. sync_stock_basic
   2. sync_trade_calendar
-  3. daily data update (daily + daily_basic + adj_factor + qfq/hfq recompute)
+  3. daily raw data update followed by an independent QFQ cache refresh
 
 Design constraints:
 - Single `tushare_session()` context wraps the steps
@@ -32,6 +32,8 @@ from app.data_service.tushare_pipeline import (
     sync_trade_calendar_from_tushare,
     update_one_day_from_tushare,
 )
+from app.models.k_line_daily import KLineDaily
+from app.repositories.qfq_cache_repo import refresh_qfq_cache_for_day
 from app.repositories.sw_repo import SWClassifyRepo, SWMemberRepo
 from app.repositories.task_log_repo import TaskLogRepo
 from app.repositories.trade_cal_repo import TradeCalRepo
@@ -160,11 +162,19 @@ def _step_daily_data(
                 trade_date=today,
                 triggered_by=triggered_by,
             )
+        with session_factory() as db:
+            codes = {
+                row.ts_code
+                for row in db.query(KLineDaily).filter_by(trade_date=today)
+            }
+            refresh_qfq_cache_for_day(db, today, codes)
         _record(report, "kline", r.status)
         _record(report, "market_cap", r.status)
+        _record(report, "qfq_cache", "SUCCESS")
     except AdapterQuotaExceededError as exc:
         _record(report, "kline", "FAILED", exc)
         _record(report, "market_cap", "FAILED", exc)
+        _record(report, "qfq_cache", "FAILED", exc)
         report.quota_exhausted = True
     except Exception as exc:
         logger.exception("daily data step failed: %s", exc)

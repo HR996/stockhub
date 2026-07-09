@@ -1,4 +1,4 @@
-"""stock_adj_factor — Tushare adjustment factors for local qfq/hfq calculation."""
+"""stock_adj_factor — authoritative Tushare factors for dynamic adjustment."""
 
 from __future__ import annotations
 

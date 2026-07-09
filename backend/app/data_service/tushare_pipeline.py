@@ -7,6 +7,9 @@ stock_basic, trade_calendar, k_line_daily, latest_market_cap and sw_industry_*.
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -22,12 +25,11 @@ from app.adapters.tushare_types import (
     TushareStockBasicRow,
 )
 from app.core.errors import AdapterAuthError, AdapterError, AdapterQuotaExceededError
-from app.models.k_line_daily import KLineDaily
-from app.models.stock_adj_factor import StockAdjFactor
 from app.models.stock_basic import StockBasic
 from app.repositories.adj_factor_repo import AdjFactorRepo, AdjFactorUpsertRow
 from app.repositories.kline_repo import KLineRepo, KLineRow
 from app.repositories.market_cap_repo import MarketCapRepo, MarketCapUpsertRow
+from app.repositories.qfq_cache_repo import rebuild_qfq_cache
 from app.repositories.stock_repo import StockBasicRepo, StockBasicRow
 from app.repositories.task_log_repo import TaskLogRepo, TaskLogRow
 from app.repositories.trade_cal_repo import TradeCalRepo, TradeCalRow
@@ -43,7 +45,7 @@ TASK_TUSHARE_INIT = "TUSHARE_INIT"
 TASK_TUSHARE_UPDATE_DAILY = "TUSHARE_UPDATE_DAILY"
 TASK_TUSHARE_SYNC_BASIC = "TUSHARE_SYNC_BASIC"
 TASK_TUSHARE_SYNC_TRADE_CAL = "TUSHARE_SYNC_TRADE_CAL"
-TASK_TUSHARE_RECOMPUTE_ADJUSTED = "TUSHARE_RECOMPUTE_ADJUSTED"
+TASK_TUSHARE_QFQ_CACHE = "TUSHARE_QFQ_CACHE"
 
 SOURCE_TUSHARE_DAILY_BASIC = "tushare_daily_basic"
 SOURCE_TUSHARE_MISSING = "tushare_missing"
@@ -202,139 +204,159 @@ def sync_trade_date_from_tushare(
     return stats
 
 
-def recompute_adjusted_prices(
-    session: Session,
-    *,
-    start: date,
-    end: date,
-    ts_codes: set[str] | None = None,
-) -> int:
-    """Recompute qfq/hfq columns from raw prices and stock_adj_factor."""
-    if ts_codes is None:
-        ts_codes = {
-            row[0]
-            for row in session.execute(
-                select(KLineDaily.ts_code)
-                .where(KLineDaily.trade_date.between(start, end))
-                .group_by(KLineDaily.ts_code)
-            ).all()
-        }
-    if not ts_codes:
-        return 0
-
-    written = 0
-    repo = KLineRepo(session)
-    for ts_code in sorted(ts_codes):
-        latest = session.execute(
-            select(StockAdjFactor.adj_factor)
-            .where(StockAdjFactor.ts_code == ts_code)
-            .order_by(StockAdjFactor.trade_date.desc())
-            .limit(1)
-        ).scalar_one_or_none()
-        if latest is None or latest == 0:
-            continue
-        factor_by_date = {
-            row.trade_date: row.adj_factor
-            for row in session.execute(
-                select(StockAdjFactor)
-                .where(StockAdjFactor.ts_code == ts_code)
-                .where(StockAdjFactor.trade_date.between(start, end))
-            ).scalars()
-        }
-        rows = session.execute(
-            select(KLineDaily)
-            .where(KLineDaily.ts_code == ts_code)
-            .where(KLineDaily.trade_date.between(start, end))
-            .order_by(KLineDaily.trade_date)
-        ).scalars().all()
-        upserts: list[KLineRow] = []
-        for row in rows:
-            factor = factor_by_date.get(row.trade_date)
-            if factor is None:
-                continue
-            upserts.append(_with_adjusted_prices(row, factor, latest))
-        written += repo.upsert_many(upserts, adjust_flags=["qfq", "hfq"])
-    return written
-
-
 def init_range_from_tushare(
     pro: object,
-    session: Session,
+    session_factory: Callable[[], AbstractContextManager[Session]],
     *,
     start: date,
     end: date,
     triggered_by: str,
+    force: bool = False,
 ) -> PipelineResult:
-    """Initialize basic data, calendar and daily data over a range."""
+    """Initialize a range with per-day commits, progress logs and resume."""
     task_key = f"{TASK_TUSHARE_INIT}:{start.isoformat()}:{end.isoformat()}"
-    task_repo = TaskLogRepo(session)
-    _mark_running(task_repo, TASK_TUSHARE_INIT, task_key, triggered_by)
-    errors: list[str] = []
-    total_written = 0
-    affected: set[str] = set()
-
-    try:
+    with session_factory() as session:
         _ensure_success(
-            sync_stock_basic_from_tushare(pro, session, triggered_by=triggered_by, today=end)
+            sync_stock_basic_from_tushare(
+                pro, session, triggered_by=triggered_by, today=end
+            )
         )
+    with session_factory() as session:
         _ensure_success(
             sync_trade_calendar_from_tushare(
                 pro, session, start=start, end=end, triggered_by=triggered_by, today=end
             )
         )
-        session.flush()
-
+    with session_factory() as session:
         open_days = [
             row.cal_date
             for row in TradeCalRepo(session).list_range(start, end)
             if row.is_open
         ]
-        for day in open_days:
-            try:
-                stats = sync_trade_date_from_tushare(
-                    pro,
-                    session,
-                    trade_date=day,
-                    triggered_by=triggered_by,
-                    write_task_log=False,
+
+    expected = len(open_days)
+    errors: list[str] = []
+    failed_dates: list[str] = []
+    total_written = 0
+    succeeded = 0
+    skipped = 0
+    _write_parent_progress(
+        session_factory, task_key, triggered_by, expected, 0, 0, total_written,
+        current_date=None, failed_dates=[], cache_status="PENDING",
+    )
+    try:
+        for index, day in enumerate(open_days, start=1):
+            child_key = f"{TASK_TUSHARE_UPDATE_DAILY}:{day.isoformat()}"
+            with session_factory() as session:
+                existing = TaskLogRepo(session).find_by_key(
+                    TASK_TUSHARE_UPDATE_DAILY, child_key
                 )
+            if not force and existing is not None and existing.status == STATUS_SUCCESS:
+                skipped += 1
+                succeeded += 1
+                logger.info("[%d/%d] %s skipped: already committed", index, expected, day)
+                _write_parent_progress(
+                    session_factory, task_key, triggered_by, expected, succeeded,
+                    len(failed_dates), total_written, current_date=day,
+                    failed_dates=failed_dates, cache_status="PENDING",
+                )
+                continue
+
+            logger.info("[%d/%d] %s fetching...", index, expected, day)
+            _write_child_status(
+                session_factory, child_key, triggered_by, STATUS_RUNNING
+            )
+            started = time.monotonic()
+            try:
+                with session_factory() as session:
+                    stats = sync_trade_date_from_tushare(
+                        pro,
+                        session,
+                        trade_date=day,
+                        triggered_by=triggered_by,
+                        write_task_log=True,
+                    )
                 total_written += stats.kline_rows_written + stats.market_cap_rows_written + stats.adj_factor_rows_written
-                affected.update(stats.affected_ts_codes)
-                session.flush()
+                succeeded += 1
+                logger.info(
+                    "[%d/%d] %s committed: daily=%d daily_basic=%d adj_factor=%d elapsed=%.2fs",
+                    index, expected, day, stats.daily_rows, stats.daily_basic_rows,
+                    stats.adj_factor_rows, time.monotonic() - started,
+                )
             except (AdapterAuthError, AdapterQuotaExceededError):
+                _write_child_failure(
+                    session_factory, child_key, triggered_by, "authentication or quota failure"
+                )
                 raise
             except AdapterError as exc:
                 errors.append(f"{day.isoformat()}: {exc}")
-            except Exception:
-                raise
+                failed_dates.append(day.isoformat())
+                _write_child_failure(
+                    session_factory, child_key, triggered_by, str(exc)
+                )
+                logger.error("[%d/%d] %s failed: %s", index, expected, day, exc)
+            _write_parent_progress(
+                session_factory, task_key, triggered_by, expected, succeeded,
+                len(failed_dates), total_written, current_date=day,
+                failed_dates=failed_dates, cache_status="PENDING",
+            )
 
-        adjusted = recompute_adjusted_prices(session, start=start, end=end, ts_codes=affected)
-        total_written += adjusted
+        cache_key = f"{TASK_TUSHARE_QFQ_CACHE}:ALL"
+        _write_child_status(
+            session_factory, cache_key, triggered_by, STATUS_RUNNING,
+            task_type=TASK_TUSHARE_QFQ_CACHE,
+        )
+        logger.info("building latest-basedate QFQ cache...")
+        try:
+            with session_factory() as session:
+                stocks, cache_rows = rebuild_qfq_cache(session)
+                _mark_finished(
+                    TaskLogRepo(session), TASK_TUSHARE_QFQ_CACHE, cache_key,
+                    triggered_by, STATUS_SUCCESS, expected_count=stocks,
+                    success_count=stocks, error_summary={"rows_written": cache_rows},
+                )
+        except Exception as exc:
+            _write_child_failure(
+                session_factory, cache_key, triggered_by, str(exc),
+                task_type=TASK_TUSHARE_QFQ_CACHE,
+            )
+            raise
+        total_written += cache_rows
+        cache_status = STATUS_SUCCESS
+        logger.info("QFQ cache committed: stocks=%d rows=%d", stocks, cache_rows)
+    except KeyboardInterrupt:
+        _finish_parent(
+            session_factory, task_key, triggered_by, STATUS_PARTIAL, expected,
+            succeeded, len(failed_dates), total_written, failed_dates, "INTERRUPTED",
+        )
+        raise
     except Exception as exc:
-        logger.exception("tushare init failed: %s", exc)
-        return _mark_failed(task_repo, TASK_TUSHARE_INIT, task_key, triggered_by, exc)
+        logger.exception("tushare init stopped: %s", exc)
+        _finish_parent(
+            session_factory, task_key, triggered_by, STATUS_PARTIAL, expected,
+            succeeded, len(failed_dates) + 1, total_written,
+            [*failed_dates, str(exc)], "FAILED",
+        )
+        raise
 
     status = STATUS_PARTIAL if errors else STATUS_SUCCESS
-    _mark_finished(
-        task_repo,
-        TASK_TUSHARE_INIT,
-        task_key,
-        triggered_by,
-        status,
-        expected_count=(end - start).days + 1,
-        success_count=total_written,
-        error_count=len(errors),
-        error_summary={"errors": errors[:20], "adjusted_rows": adjusted} if errors else {"adjusted_rows": adjusted},
+    _finish_parent(
+        session_factory, task_key, triggered_by, status, expected, succeeded,
+        len(failed_dates), total_written, failed_dates, cache_status,
     )
     return PipelineResult(
         TASK_TUSHARE_INIT,
         task_key,
         status,
-        expected_count=(end - start).days + 1,
-        success_count=total_written,
-        error_count=len(errors),
+        expected_count=expected,
+        success_count=succeeded,
+        missing_count=max(expected - succeeded - len(failed_dates), 0),
+        error_count=len(failed_dates),
         rows_written=total_written,
-        error_summary={"errors": errors[:20], "adjusted_rows": adjusted},
+        error_summary={
+            "errors": errors[:20], "failed_dates": failed_dates[:20],
+            "skipped_dates": skipped, "cache_status": cache_status,
+        },
     )
 
 
@@ -352,12 +374,6 @@ def update_one_day_from_tushare(
         triggered_by=triggered_by,
         write_task_log=True,
     )
-    adjusted = recompute_adjusted_prices(
-        session,
-        start=trade_date,
-        end=trade_date,
-        ts_codes=stats.affected_ts_codes,
-    )
     return PipelineResult(
         TASK_TUSHARE_UPDATE_DAILY,
         f"{TASK_TUSHARE_UPDATE_DAILY}:{trade_date.isoformat()}",
@@ -365,8 +381,7 @@ def update_one_day_from_tushare(
         expected_count=stats.daily_rows + stats.suspended_rows,
         success_count=stats.kline_rows_written,
         missing_count=stats.suspended_rows,
-        rows_written=stats.kline_rows_written + stats.market_cap_rows_written + stats.adj_factor_rows_written + adjusted,
-        error_summary={"adjusted_rows": adjusted},
+        rows_written=stats.kline_rows_written + stats.market_cap_rows_written + stats.adj_factor_rows_written,
     )
 
 
@@ -404,7 +419,7 @@ def _persist_trade_date(
             )
         )
     stats.suspended_rows = len(missing_active_codes)
-    stats.kline_rows_written = KLineRepo(session).upsert_many(kline_rows, adjust_flags=["raw"])
+    stats.kline_rows_written = KLineRepo(session).upsert_many(kline_rows)
     stats.affected_ts_codes.update(row.ts_code for row in kline_rows)
 
     adj_rows = [
@@ -488,41 +503,6 @@ def _to_market_cap_row(row: TushareDailyBasicRow, daily: TushareDailyRow | None)
     )
 
 
-def _with_adjusted_prices(row: KLineDaily, factor: Decimal, latest_factor: Decimal) -> KLineRow:
-    return KLineRow(
-        ts_code=row.ts_code,
-        trade_date=row.trade_date,
-        trade_status=row.trade_status,
-        is_st_row=row.is_st_row,
-        open_qfq=_qfq(row.open_raw, factor, latest_factor),
-        high_qfq=_qfq(row.high_raw, factor, latest_factor),
-        low_qfq=_qfq(row.low_raw, factor, latest_factor),
-        close_qfq=_qfq(row.close_raw, factor, latest_factor),
-        preclose_qfq=_qfq(row.preclose_raw, factor, latest_factor),
-        open_hfq=_hfq(row.open_raw, factor),
-        high_hfq=_hfq(row.high_raw, factor),
-        low_hfq=_hfq(row.low_raw, factor),
-        close_hfq=_hfq(row.close_raw, factor),
-        preclose_hfq=_hfq(row.preclose_raw, factor),
-        volume=row.volume,
-        amount=row.amount,
-        turn=row.turn,
-        pct_chg=row.pct_chg,
-    )
-
-
-def _qfq(price: Decimal | None, factor: Decimal, latest_factor: Decimal) -> Decimal | None:
-    if price is None or latest_factor == 0:
-        return None
-    return price * factor / latest_factor
-
-
-def _hfq(price: Decimal | None, factor: Decimal) -> Decimal | None:
-    if price is None:
-        return None
-    return price * factor
-
-
 def _bs_code_from_ts(ts_code: str) -> str:
     symbol, market = ts_code.split(".", 1)
     return f"{market.lower()}.{symbol}"
@@ -582,6 +562,110 @@ def _mark_finished(
             error_summary=error_summary,
         )
     )
+
+
+def _write_child_status(
+    session_factory: Callable[[], AbstractContextManager[Session]],
+    task_key: str,
+    triggered_by: str,
+    status: str,
+    *,
+    task_type: str = TASK_TUSHARE_UPDATE_DAILY,
+) -> None:
+    with session_factory() as session:
+        TaskLogRepo(session).upsert_by_key(
+            TaskLogRow(
+                task_type=task_type,
+                task_key=task_key,
+                status=status,
+                created_by=triggered_by,
+            )
+        )
+
+
+def _write_child_failure(
+    session_factory: Callable[[], AbstractContextManager[Session]],
+    task_key: str,
+    triggered_by: str,
+    message: str,
+    *,
+    task_type: str = TASK_TUSHARE_UPDATE_DAILY,
+) -> None:
+    with session_factory() as session:
+        _mark_finished(
+            TaskLogRepo(session),
+            task_type,
+            task_key,
+            triggered_by,
+            STATUS_FAILED,
+            error_count=1,
+            error_summary={"message": message},
+        )
+
+
+def _write_parent_progress(
+    session_factory: Callable[[], AbstractContextManager[Session]],
+    task_key: str,
+    triggered_by: str,
+    expected: int,
+    succeeded: int,
+    failed: int,
+    rows_written: int,
+    *,
+    current_date: date | None,
+    failed_dates: list[str],
+    cache_status: str,
+) -> None:
+    with session_factory() as session:
+        TaskLogRepo(session).upsert_by_key(
+            TaskLogRow(
+                task_type=TASK_TUSHARE_INIT,
+                task_key=task_key,
+                status=STATUS_RUNNING,
+                created_by=triggered_by,
+                expected_count=expected,
+                success_count=succeeded,
+                missing_count=max(expected - succeeded - failed, 0),
+                error_count=failed,
+                error_summary={
+                    "current_date": current_date.isoformat() if current_date else None,
+                    "rows_written": rows_written,
+                    "failed_dates": failed_dates[:20],
+                    "cache_status": cache_status,
+                },
+            )
+        )
+
+
+def _finish_parent(
+    session_factory: Callable[[], AbstractContextManager[Session]],
+    task_key: str,
+    triggered_by: str,
+    status: str,
+    expected: int,
+    succeeded: int,
+    failed: int,
+    rows_written: int,
+    failed_dates: list[str],
+    cache_status: str,
+) -> None:
+    with session_factory() as session:
+        _mark_finished(
+            TaskLogRepo(session),
+            TASK_TUSHARE_INIT,
+            task_key,
+            triggered_by,
+            status,
+            expected_count=expected,
+            success_count=succeeded,
+            missing_count=max(expected - succeeded - failed, 0),
+            error_count=failed,
+            error_summary={
+                "rows_written": rows_written,
+                "failed_dates": failed_dates[:20],
+                "cache_status": cache_status,
+            },
+        )
 
 
 def _ensure_success(result: PipelineResult) -> None:

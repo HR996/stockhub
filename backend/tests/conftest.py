@@ -43,7 +43,7 @@ def _truncate_test_tables(session: Session) -> None:
     with session.begin():
         session.execute(
             text(
-                "TRUNCATE TABLE stock_basic, trade_calendar, k_line_daily, "
+                "TRUNCATE TABLE stock_basic, trade_calendar, k_line_daily, k_line_qfq_latest, "
                 "data_update_task, latest_market_cap, stock_adj_factor, sw_industry_classify, "
                 "sw_industry_member, browse_history, factor_config, "
                 "factor_result, factor_result_row, factor_result_stock "

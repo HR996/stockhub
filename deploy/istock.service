@@ -1,0 +1,25 @@
+[Unit]
+Description=istock FastAPI service
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/stockhub/backend
+EnvironmentFile=/home/ubuntu/stockhub/backend/.env
+Environment=PATH=/home/ubuntu/stockhub/backend/.venv/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+ExecStart=/home/ubuntu/stockhub/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/stockhub
+
+[Install]
+WantedBy=multi-user.target

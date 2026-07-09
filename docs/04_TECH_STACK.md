@@ -68,7 +68,7 @@
 | **JSON 字段** | 原生支持 | 一等公民（jsonb） | 5.7+ 支持但性能弱 |
 | **窗口函数 / CTE** | 完整（PG 兼容语法） | 完整 | 8.0+ 完整 |
 | **事务隔离** | 支持但简化 | 完整 | 完整 |
-| **Docker 化难度** | 无需 —— 嵌入进程 | 一行 image | 一行 image |
+| **部署复杂度** | 无需独立服务 | 需安装并管理服务 | 需安装并管理服务 |
 | **备份策略** | 复制 `.duckdb` 文件 | pg_dump | mysqldump |
 | **运维复杂度** | 极低（无独立进程） | 中（连接池 / VACUUM / 参数调优） | 中（同 PG） |
 | **社区成熟度** | 新兴，v1.x 稳定 | 极成熟 | 极成熟 |
@@ -100,7 +100,7 @@
 | --- | --- |
 | PostgreSQL 版本 | **15.x**（16 亦可，锁定 15+） |
 | Python 驱动 | `psycopg[binary]` 3.1+（不用旧 psycopg2） |
-| 部署形态 | Docker Compose 拉起 PG 容器；数据卷挂载至宿主机 |
+| 部署形态 | PostgreSQL 系统服务，或独立数据库服务器 |
 | 备份 | 每日凌晨 `pg_dump` 到 `/backup/`，保留 30 天 |
 | 连接池 | SQLAlchemy 内建 `QueuePool`，v1 单机不引入 pgbouncer |
 | 迁移 | Alembic（因用 PG，不需 batch mode） |
@@ -193,10 +193,7 @@
 | xls 读取 | **`xlrd==1.2.0`**（**版本锁死**） | 1.2.0 | xlrd 2.0+ 已移除 xls 支持，必须钉在 1.2.0 |
 | 统一入口 | pandas | 2.2+ | pandas 会自动路由到 openpyxl / xlrd |
 
-**部署要求**：Dockerfile 中显式安装：
-```dockerfile
-RUN apt-get update && apt-get install -y unrar-free && rm -rf /var/lib/apt/lists/*
-```
+**部署要求**：在操作系统中安装 `unrar-free`、`unrar` 或 `unar`。
 
 **替代方案**：
 - `patool` / `pyunpack`（放弃：抽象层过深、错误信息含糊）
@@ -321,7 +318,6 @@ istock/
 │   │   └── fixtures/             # 申万样例文件、K 线 fixture
 │   ├── pyproject.toml
 │   ├── uv.lock                   # uv 生成的锁文件（提交入库）
-│   └── Dockerfile
 ├── frontend/
 │   ├── src/
 │   │   ├── api/                  # 与后端 api/ 一一对应
@@ -334,8 +330,6 @@ istock/
 │   ├── vite.config.ts
 │   ├── tsconfig.json
 │   ├── package.json
-│   └── Dockerfile
-├── docker-compose.yml            # 拉起 postgres + backend + frontend
 ├── docs/
 ├── prompt/
 ├── sw-data/                      # 申万样例数据（开发期用）
@@ -350,12 +344,12 @@ istock/
 | --- | --- |
 | 后端包管理 | **uv**（`uv sync` 装依赖、`uv run` 跑命令、`uv add / remove` 增删依赖） |
 | 后端锁文件 | `uv.lock`（提交入库，保证跨环境复现） |
-| 本地开发 | `docker-compose up`：postgres + 后端 uvicorn + 前端 vite dev server |
+| 本地开发 | PostgreSQL 系统服务 + 后端 uvicorn + 前端 Vite dev server |
 | 后端启动（宿主） | `uv run uvicorn app.main:app --reload --port 8000` |
 | 后端测试（宿主） | `uv run pytest` |
 | 后端 lint（宿主） | `uv run ruff check app/ tests/` / `uv run mypy app/` |
 | 前端启动 | `npm run dev`（Vite 默认 5173） |
-| 生产部署 | 单机 Docker Compose；nginx 反代前端静态 + 后端 API |
+| 生产部署 | nginx 托管前端静态资源并反代后端 API；后端由 systemd / supervisor 管理 |
 | 环境变量 | `.env`（gitignore）+ `.env.example`（模板） |
 | 关键环境变量 | `DATABASE_URL` / `ADMIN_PASSWORD_HASH` / `PRECONFIGURED_USERS` / `BAOSTOCK_ENABLED` / `AKSHARE_ENABLED` |
 
@@ -386,7 +380,7 @@ istock/
 
 ## 12. 转交给 05_DATA_MODEL 的项
 
-- K 线三口径的存储形式（3 表 vs 一表 3 组字段）
+- K 线 raw 事实表、复权因子和最新 QFQ 缓存的职责边界
 - `latest_market_cap` 表结构（含 `market_cap_source` 字段）
 - `sw_index_classify` / `sw_index_member_all` 与 `sw_industry_version` 的外键关系
 - `factor_result` 的 `stale` / `stale_reason` 字段设计

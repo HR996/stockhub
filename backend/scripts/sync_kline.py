@@ -100,22 +100,23 @@ def main() -> None:
 
     from datetime import UTC, datetime
 
+    from sqlalchemy import func, select
+
     from app.adapters.baostock_adapter import baostock_session
     from app.core.db import session_scope
+    from app.models.k_line_daily import KLineDaily
     from app.repositories.kline_repo import KLineRepo
     from app.repositories.stock_repo import StockBasicRepo
     from app.repositories.task_log_repo import TaskLogRepo
     from app.services.sync_kline_service import AdjustMode, sync_kline_for_stocks
-    from sqlalchemy import select, func, text
-    from app.models.k_line_daily import KLineDaily
 
     today = datetime.now(UTC).date()
     start_date: date = args.start or date(today.year - 3, 1, 1)
     end_date: date = args.end or today
 
-    adjust_flags: list[AdjustMode] = (
-        ["raw", "qfq", "hfq"] if args.adjust == "all" else [args.adjust]
-    )
+    if args.adjust not in ("all", "raw"):
+        raise SystemExit("legacy Baostock sync now supports raw data only")
+    adjust_flags: list[AdjustMode] = ["raw"]
 
     # Resolve stock list
     with session_scope() as db:
@@ -128,25 +129,11 @@ def main() -> None:
         else:
             ts_codes = StockBasicRepo(db).list_active_ts_codes_at(today)
 
-        # --resume: skip stocks that already have data for all requested adjust flags
-        if args.resume and adjust_flags != ["raw", "qfq", "hfq"]:
-            # For a single adjust flag, check the corresponding close column is non-null
-            flag = adjust_flags[0]
-            col_map = {"raw": KLineDaily.close_raw, "qfq": KLineDaily.close_qfq, "hfq": KLineDaily.close_hfq}
-            col = col_map[flag]
+        if args.resume:
+            col = KLineDaily.close_raw
             done_codes = {
                 row[0] for row in db.execute(
                     select(func.distinct(KLineDaily.ts_code)).where(col.isnot(None))
-                ).all()
-            }
-            before = len(ts_codes)
-            ts_codes = [c for c in ts_codes if c not in done_codes]
-            logger.info("--resume: skipping %d already-done stocks, %d remaining", before - len(ts_codes), len(ts_codes))
-        elif args.resume:
-            # all three flags: skip stocks present in DB at all
-            done_codes = {
-                row[0] for row in db.execute(
-                    select(func.distinct(KLineDaily.ts_code))
                 ).all()
             }
             before = len(ts_codes)
@@ -168,18 +155,17 @@ def main() -> None:
         adjust_flags,
     )
 
-    with baostock_session():
-        with session_scope() as db:
-            result = sync_kline_for_stocks(
-                ts_codes=ts_codes,
-                start_date=start_date,
-                end_date=end_date,
-                kline_repo=KLineRepo(db),
-                task_repo=TaskLogRepo(db),
-                triggered_by="sync_kline_script",
-                adjust_flags=adjust_flags,
-                session=db,
-            )
+    with baostock_session(), session_scope() as db:
+        result = sync_kline_for_stocks(
+            ts_codes=ts_codes,
+            start_date=start_date,
+            end_date=end_date,
+            kline_repo=KLineRepo(db),
+            task_repo=TaskLogRepo(db),
+            triggered_by="sync_kline_script",
+            adjust_flags=adjust_flags,
+            session=db,
+        )
 
     logger.info("status:        %s", result.status)
     logger.info("stocks OK:     %d / %d", result.success_count, result.expected_count)

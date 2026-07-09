@@ -33,8 +33,6 @@ def _kline(ts_code: str, close: str) -> KLineRow:
         trade_date=SNAP,
         trade_status=1,
         close_raw=Decimal(close),
-        close_qfq=Decimal(close),
-        close_hfq=Decimal(close),
     )
 
 

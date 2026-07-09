@@ -18,7 +18,8 @@
 | `error_log` | 系统异常日志 | US-8.1 |
 | `stock_basic` | 股票基础信息 | US-2.1、US-5.2 |
 | `trade_calendar` | 交易日历 | US-2.1、US-7.1 |
-| `k_line_daily` | 日 K 线（含三种复权口径） | US-2.1 ~ US-2.3 |
+| `k_line_daily` | 未复权日 K 线事实表 | US-2.1 ~ US-2.3 |
+| `k_line_qfq_latest` | 最新基准日前复权展示缓存 | US-5.1 |
 | `stock_adj_factor` | 复权因子（Tushare） | US-2.2、US-2.3 |
 | `latest_market_cap` | 最新市值（Tushare daily_basic） | US-2.4 |
 | `csrc_industry` | 证监会行业分类 | US-3.1、US-5.2 |
@@ -134,13 +135,7 @@
 
 ### 4.3 `k_line_daily` — 日 K 线
 
-**ADR-K01：K 线三种复权口径 = 一表 3 组字段（不拆 3 张表）**
-
-理由：
-1. 三种口径的日期与 volume / turn / tradestatus 完全一致，只有价格字段不同 —— 拆表会造成主键与非价格字段的冗余
-2. 一表 3 组字段的宽表大小可控（每行约 200 字节 × 375 万行 ≈ 750MB），PG 单表完全可承受
-3. 因子计算只读前复权，不影响另两组字段的存储代价
-4. 简化同步逻辑：一次 upsert 完成，避免三表事务
+**ADR-K01：事实表只保存未复权行情。** 复权因子独立保存，研究计算动态复权，展示使用可重建缓存。
 
 | 字段 | 类型 | Null | 说明 |
 | --- | --- | --- | --- |
@@ -148,8 +143,6 @@
 | `ts_code` | VARCHAR(16) | N | 股票代码 |
 | `trade_date` | DATE | N | 交易日 |
 | `open_raw` / `high_raw` / `low_raw` / `close_raw` / `preclose_raw` | NUMERIC(12,4) | Y | 不复权价（Tushare `daily`） |
-| `open_qfq` / `high_qfq` / `low_qfq` / `close_qfq` / `preclose_qfq` | NUMERIC(12,4) | Y | 前复权价（由 raw + `stock_adj_factor` 计算）—— **因子算法使用** |
-| `open_hfq` / `high_hfq` / `low_hfq` / `close_hfq` / `preclose_hfq` | NUMERIC(12,4) | Y | 后复权价（由 raw + `stock_adj_factor` 计算） |
 | `volume` | NUMERIC(20,2) | Y | 成交量（股；Tushare `vol` 手 × 100） |
 | `amount` | NUMERIC(20,4) | Y | 成交额（元；Tushare `amount` 千元 × 1000） |
 | `turn` | NUMERIC(10,4) | Y | 换手率 |
@@ -186,11 +179,14 @@
 - `(ts_code, trade_date DESC)` — 取股票最新复权因子
 
 **复权计算**：
-- `hfq_price = raw_price * adj_factor`
-- `qfq_price = raw_price * adj_factor / latest_adj_factor`
-- `latest_adj_factor` 取该股票本地最新交易日复权因子；新增未来数据后会重算本地保留区间内 qfq/hfq 列。
+- 任意基准日前复权：`qfq(t, B) = raw(t) * factor(t) / factor(B)`
+- 因子收益直接使用 `raw_end * factor_end / (raw_start * factor_start)`。
 
-### 4.5 `latest_market_cap` — 最新市值
+### 4.5 `k_line_qfq_latest` — 最新前复权展示缓存
+
+缓存保存 `ts_code`、`trade_date`、前复权 OHLC/preclose、`base_date`、`base_adj_factor` 和 `calculated_at`。唯一键为 `(ts_code, trade_date)`。该表不是权威数据，可以从 `k_line_daily + stock_adj_factor` 完整重建。
+
+### 4.6 `latest_market_cap` — 最新市值
 
 **数据源**：Tushare `daily_basic`。`total_mv/circ_mv` 按万元返回，入库转为元；`total_share/float_share` 按万股返回，入库转为股。
 
@@ -214,7 +210,7 @@
 - 因子过滤条件 `total_market_cap >= 100 亿元` 直接查此表；null 值视为不满足过滤条件
 - 覆盖率注意：Tushare 权限或单日缺失时写 `market_cap_source='tushare_missing'`
 
-### 4.6 `csrc_industry` — 证监会行业分类
+### 4.7 `csrc_industry` — 证监会行业分类
 
 | 字段 | 类型 | Null | 说明 |
 | --- | --- | --- | --- |
@@ -497,7 +493,7 @@ stock_basic (1) ── (N) sw_index_member_all  [ts_code, 跨版本]
 | --- | --- | --- |
 | **ADR-DB01** | 主键统一 BIGSERIAL；业务键作 UNIQUE | §2 |
 | **ADR-DB02** | 时间字段全部 TIMESTAMPTZ | §2 |
-| **ADR-K01** | K 线三种复权口径 = 一表 3 组字段（不拆 3 张表） | §4.3 |
+| **ADR-K01** | K 线事实表只存 raw，复权动态计算，最新 QFQ 单独缓存 | §4.3 |
 | **ADR-DB03** | 半结构化字段用 JSONB | §2 |
 | **ADR-DB04** | 申万版本生效标识使用 PG 部分唯一索引（`WHERE is_current`） | §5.1 |
 | **ADR-DB05** | 申万分类回滚 / 新版本写入自动标记 factor_result 失效；K 线补数不自动标记 | §7.5 |
@@ -514,7 +510,7 @@ stock_basic (1) ── (N) sw_index_member_all  [ts_code, 跨版本]
 
 | 03 遗留项 | 本文档决策 |
 | --- | --- |
-| K 线三口径存法 | ADR-K01：一表 3 组字段 |
+| K 线复权存法 | ADR-K01：raw 事实表 + 复权因子 + 最新 QFQ 缓存 |
 | `factor_result.stale` 字段设计 | §7.2 + §7.4 |
 | `latest_market_cap` 表结构 | §4.5 |
 | 申万分类三张表关系 | §5 |

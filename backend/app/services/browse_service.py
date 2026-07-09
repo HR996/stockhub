@@ -15,6 +15,7 @@ from app.models.browse_history import BrowseHistory
 from app.models.data_update_task import DataUpdateTask
 from app.models.factor import FactorConfig, FactorResult, FactorResultRow, FactorResultStock
 from app.models.k_line_daily import KLineDaily
+from app.models.k_line_qfq_latest import KLineQfqLatest
 from app.models.latest_market_cap import LatestMarketCap
 from app.models.stock_adj_factor import StockAdjFactor
 from app.models.stock_basic import StockBasic
@@ -70,12 +71,18 @@ TABLES: dict[str, TableSpec] = {
         (f("id", "ID", "number", "内部主键"), f("cal_date", "日期", "date", "日历日期"), f("is_open", "交易日", "boolean", "是否开市"), f("updated_at", "更新时间", "datetime", "更新时间")),
     ),
     "k_line_daily": TableSpec(
-        "k_line_daily", "日 K 线", "日线行情，包含不复权、前复权、后复权三组价格。", KLineDaily,
+        "k_line_daily", "日 K 线", "权威的未复权日线行情。", KLineDaily,
         tuple(f(k, k, "number" if k not in ("ts_code", "trade_date", "updated_at") else ("string" if k == "ts_code" else "date"), k) for k in (
             "id", "ts_code", "trade_date", "open_raw", "high_raw", "low_raw", "close_raw",
-            "open_qfq", "high_qfq", "low_qfq", "close_qfq", "open_hfq", "high_hfq",
-            "low_hfq", "close_hfq", "volume", "amount", "turn", "pct_chg", "trade_status",
+            "volume", "amount", "turn", "pct_chg", "trade_status",
             "is_st_row", "updated_at",
+        )),
+    ),
+    "k_line_qfq_latest": TableSpec(
+        "k_line_qfq_latest", "最新前复权 K 线", "以每只股票最新复权因子为基准的展示缓存。", KLineQfqLatest,
+        tuple(f(k, k, "number" if k not in ("ts_code", "trade_date", "base_date", "calculated_at") else ("date" if k in ("trade_date", "base_date") else "string"), k) for k in (
+            "id", "ts_code", "trade_date", "open", "high", "low", "close", "preclose",
+            "base_date", "base_adj_factor", "calculated_at",
         )),
     ),
     "latest_market_cap": TableSpec(
@@ -86,7 +93,7 @@ TABLES: dict[str, TableSpec] = {
         )),
     ),
     "stock_adj_factor": TableSpec(
-        "stock_adj_factor", "复权因子", "Tushare 复权因子，用于本地计算 qfq/hfq。", StockAdjFactor,
+        "stock_adj_factor", "复权因子", "Tushare 权威复权因子。", StockAdjFactor,
         tuple(f(k, k, "number" if k not in ("ts_code", "trade_date", "source", "updated_at") else ("date" if k == "trade_date" else "string"), k) for k in (
             "id", "ts_code", "trade_date", "adj_factor", "source", "updated_at",
         )),

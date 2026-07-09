@@ -38,7 +38,9 @@ python -m app.data_service init --start 2026-05-08 --end 2026-07-08
 3. 按交易日批量同步全市场 `daily`
 4. 同步同日 `daily_basic` 并写入 `latest_market_cap`
 5. 同步同日 `adj_factor` 并写入 `stock_adj_factor`
-6. 用本地 raw 日线 + 复权因子重算 `k_line_daily` 的 qfq/hfq 列
+6. 全部交易日提交后构建 `k_line_qfq_latest` 展示缓存
+
+每个交易日独立提交并输出进度。重复执行会跳过已经成功的日期；使用 `--force` 可强制重抓。
 
 ### 日常单日更新
 
@@ -53,10 +55,11 @@ python -m app.data_service sync-basic
 python -m app.data_service sync-calendar --start 2026-01-01 --end 2026-12-31
 ```
 
-### 重算复权价格
+### 重建最新前复权缓存
 
 ```bash
-python -m app.data_service recompute-adjusted --start 2026-05-08 --end 2026-07-08
+python -m app.data_service rebuild-qfq-cache
+python -m app.data_service rebuild-qfq-cache --ts-code 600000.SH
 ```
 
 ## Legacy Baostock Scripts
@@ -66,4 +69,4 @@ python -m app.data_service recompute-adjusted --start 2026-05-08 --end 2026-07-0
 - `init_data.py`
 - `sync_kline.py`
 
-新链路使用 Tushare `daily + daily_basic + adj_factor`，按交易日批量同步全市场数据，不再按股票逐只请求 qfq/hfq。
+新链路使用 Tushare `daily + daily_basic + adj_factor`，权威 K 线只保存未复权数据。

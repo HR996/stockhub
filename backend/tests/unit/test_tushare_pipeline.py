@@ -8,12 +8,11 @@ from decimal import Decimal
 from app.adapters.tushare_types import TushareDailyBasicRow, TushareDailyRow, TushareStockBasicRow
 from app.data_service.tushare_pipeline import (
     SOURCE_TUSHARE_DAILY_BASIC,
-    _hfq,
-    _qfq,
     _to_kline_row,
     _to_market_cap_row,
     _to_stock_repo_row,
 )
+from app.repositories.qfq_cache_repo import _qfq
 
 
 def test_stock_basic_mapping_keeps_frontend_compatible_fields() -> None:
@@ -108,6 +107,5 @@ def test_daily_basic_mapping_converts_market_cap_units() -> None:
 
 
 def test_adjustment_formula_matches_tushare_pro_bar_shape() -> None:
-    assert _hfq(Decimal("10"), Decimal("2")) == Decimal("20")
     assert _qfq(Decimal("10"), Decimal("2"), Decimal("4")) == Decimal("5")
     assert _qfq(None, Decimal("2"), Decimal("4")) is None

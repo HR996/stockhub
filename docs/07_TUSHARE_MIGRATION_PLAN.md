@@ -1,4 +1,6 @@
-# Tushare 数据源迁移与数据服务拆分计划
+# Tushare 数据源迁移与数据服务拆分计划（历史方案）
+
+> 本文已被 raw 事实表 + 动态复权 + 最新 QFQ 缓存架构取代，仅保留迁移历史。当前结构见 `docs/05_DATA_MODEL.md`。
 
 ## Summary
 
@@ -74,7 +76,7 @@
   - `TUSHARE_SYNC_BASIC`
   - `TUSHARE_SYNC_SW`
   - `TUSHARE_RECOMPUTE_ADJUSTED`
-- 后续可在 Docker Compose 中把 data service 独立成 `data-worker` 进程；本轮先完成代码边界拆分，不强制拆仓库。
+- 后续可由 systemd / supervisor 把 data service 管理为独立 worker 进程；本轮先完成代码边界拆分，不强制拆仓库。
 
 ### 4. 批量日 K 拉取流程
 

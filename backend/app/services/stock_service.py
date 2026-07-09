@@ -9,8 +9,10 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.errors import ValidationError
+from app.repositories.adj_factor_repo import AdjFactorRepo
 from app.repositories.kline_repo import KLineRepo
 from app.repositories.market_cap_repo import MarketCapRepo
+from app.repositories.qfq_cache_repo import QfqCacheRepo
 from app.repositories.stock_repo import StockBasicRepo
 from app.repositories.sw_repo import SWMemberRepo
 
@@ -21,7 +23,9 @@ def get_stock_detail(session: Session, ts_code: str) -> dict[str, Any] | None:
         return None
     cap = MarketCapRepo(session).get_by_ts_code(ts_code)
     sw = SWMemberRepo(session).get_by_ts_code(ts_code)
-    latest = KLineRepo(session).get(ts_code, KLineRepo(session).latest_trade_date()) if KLineRepo(session).latest_trade_date() else None
+    latest_date = KLineRepo(session).latest_trade_date()
+    latest = KLineRepo(session).get(ts_code, latest_date) if latest_date else None
+    latest_qfq = QfqCacheRepo(session).latest_for_stock(ts_code)
     return {
         "basic": {
             "ts_code": stock.ts_code,
@@ -39,7 +43,7 @@ def get_stock_detail(session: Session, ts_code: str) -> dict[str, Any] | None:
             "trade_date": latest.trade_date.isoformat() if latest else None,
             "trade_status": latest.trade_status if latest else None,
             "close_raw": _json(latest.close_raw) if latest else None,
-            "close_qfq": _json(latest.close_qfq) if latest else None,
+            "close_qfq": _json(latest_qfq.close) if latest_qfq else None,
         },
         "market_cap": None if cap is None else {
             "total_market_cap": _json(cap.total_market_cap),
@@ -70,26 +74,47 @@ def get_stock_kline(
     end: date | None,
     adjust: str,
 ) -> dict[str, Any]:
-    if adjust not in ("raw", "qfq", "hfq"):
-        raise ValidationError("VALIDATION_INVALID_ADJUST", "adjust must be raw/qfq/hfq")
+    if adjust != "qfq":
+        raise ValidationError("VALIDATION_INVALID_ADJUST", "adjust must be qfq")
     end = end or date.today()
     start = start or (end - timedelta(days=240))
     if (end - start).days > 366 * 3:
         raise ValidationError("VALIDATION_DATE_RANGE_TOO_LARGE", "kline range max is 3 years")
-    rows = KLineRepo(session).list_by_stock(ts_code, start, end)
+    latest_factor = AdjFactorRepo(session).latest_for_stock(ts_code)
+    latest_cache = QfqCacheRepo(session).latest_for_stock(ts_code)
+    if latest_factor is None:
+        raise ValidationError(
+            "QFQ_CACHE_STALE", f"no adjustment factor available for {ts_code}"
+        )
+    if (
+        latest_cache is None
+        or latest_cache.base_adj_factor != latest_factor.adj_factor
+    ):
+        raise ValidationError(
+            "QFQ_CACHE_STALE", f"QFQ cache is stale for {ts_code}"
+        )
+    rows = QfqCacheRepo(session).list_by_stock(ts_code, start, end)
+    raw_by_date = {
+        row.trade_date: row
+        for row in KLineRepo(session).list_by_stock(ts_code, start, end)
+    }
     return {
         "ts_code": ts_code,
-        "adjust": adjust,
+        "adjust": "qfq",
+        "base_date": latest_factor.trade_date.isoformat(),
         "items": [
             {
                 "trade_date": r.trade_date.isoformat(),
-                "open": _json(getattr(r, f"open_{adjust}")),
-                "high": _json(getattr(r, f"high_{adjust}")),
-                "low": _json(getattr(r, f"low_{adjust}")),
-                "close": _json(getattr(r, f"close_{adjust}")),
-                "volume": _json(r.volume),
-                "amount": _json(r.amount),
-                "trade_status": r.trade_status,
+                "open": _json(r.open),
+                "high": _json(r.high),
+                "low": _json(r.low),
+                "close": _json(r.close),
+                "volume": _json(raw_by_date[r.trade_date].volume)
+                if r.trade_date in raw_by_date else None,
+                "amount": _json(raw_by_date[r.trade_date].amount)
+                if r.trade_date in raw_by_date else None,
+                "trade_status": raw_by_date[r.trade_date].trade_status
+                if r.trade_date in raw_by_date else 1,
             }
             for r in rows
         ],

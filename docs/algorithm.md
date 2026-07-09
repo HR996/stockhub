@@ -139,26 +139,26 @@ start_date = basedate 向前回溯 window 个交易日
 
 ## 6. 个股收益
 
-使用前复权收盘价：
+使用未复权收盘价和对应交易日复权因子动态计算：
 
 ```text
-price_start = adj_close(stock, start_date)
-price_end = adj_close(stock, basedate)
+return_ratio = raw_close(basedate) * factor(basedate)
+             / (raw_close(start_date) * factor(start_date))
 ```
 
 ### simple
 
 ```text
-stock_return = price_end / price_start - 1
+stock_return = return_ratio - 1
 ```
 
 ### log
 
 ```text
-stock_return = ln(price_end / price_start)
+stock_return = ln(return_ratio)
 ```
 
-若缺少 `start_date` 或 `basedate` 的前复权收盘价，该股票不参与计算，并记录缺失原因。
+若缺少任一日期的原始收盘价或复权因子，该股票不参与计算，并记录缺失原因。
 
 ---
 

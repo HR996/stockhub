@@ -65,22 +65,16 @@ def test_bs_code_from_ts_maps_all_markets() -> None:
     assert _bs_code_from_ts("430047.BJ") == "bj.430047"
 
 
-def test_merge_uses_all_dates_and_null_missing_prices() -> None:
+def test_merge_persists_raw_dates_only() -> None:
     raw = [_pg("600000.SH", D, "10.00")]
     qfq = [_pg("600000.SH", D, "9.50"), _pg("600000.SH", D2, "9.60")]
     hfq: list[KLinePriceGroup] = []
 
     merged = _merge_one_stock(raw, qfq, hfq)
-    assert [r.trade_date for r in merged] == [D, D2]
+    assert [r.trade_date for r in merged] == [D]
 
     r0 = merged[0]
     assert r0.close_raw == Decimal("10.00")
-    assert r0.close_qfq == Decimal("9.50")
-    assert r0.close_hfq is None
-    r1 = merged[1]
-    assert r1.close_raw is None
-    assert r1.close_qfq == Decimal("9.60")
-    assert r1.close_hfq is None
 
 
 def test_merge_preserves_suspended_day() -> None:

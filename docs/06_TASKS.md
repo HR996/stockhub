@@ -21,13 +21,11 @@
   - `backend/app/core/envelope.py` — `ok()` / `fail()`
   - `backend/pyproject.toml` — 依赖 + Ruff + mypy 配置（uv 管理）
   - `backend/uv.lock` — uv 锁文件
-  - `backend/Dockerfile` — 含 `unrar-free` 系统依赖 + `uv sync` 装依赖
   - `frontend/` — Vite + React + TS + AntD scaffold
   - `frontend/src/main.tsx` + `App.tsx`（先展示 hello world）
-  - `docker-compose.yml` — postgres + backend + frontend
   - `README.md` — 本地启动步骤
 - **DoD**：
-  - [ ] `docker-compose up` 成功拉起
+  - [ ] PostgreSQL、后端和前端均可在本机启动
   - [ ] `curl http://localhost:8000/api/health` 返回 `{"success":true,"data":{...},"message":""}`
   - [ ] 前端 `http://localhost:5173` 展示占位页
   - [ ] `ruff check` / `mypy` / `pnpm lint` 全绿
@@ -64,7 +62,7 @@
   - `backend/app/core/errors.py` — `AdapterConnectionError` / `AdapterDataError` / `AdapterAuthError`
   - `backend/tests/integration/test_baostock_adapter.py` — 真接口打通 1 支样本股
 - **DoD**：
-  - [ ] `fetch_kline("sh.600000", "2026-01-01", "2026-01-10")` 三种复权口径均返回非空 DataFrame
+  - [ ] `fetch_kline("sh.600000", ...)` 可返回未复权行情
   - [ ] 停牌日行 `trade_status=0` 且价格字段为 null
   - [ ] Adapter **不写数据库**（返回纯数据结构）
   - [ ] 单文件 <200 行
@@ -118,14 +116,14 @@
 
 ---
 
-### P1-06 K 线同步 Service（三口径）
+### P1-06 K 线同步 Service（历史任务，现已收敛为 raw）
 - **状态**：done（本仓库直接执行完成）
 - **参考**：`docs/03_MODULES.md §3.2`；`docs/05_DATA_MODEL.md §4.3`；`prompt/reference/baostock_cheatsheet.md`
 - **交付物**：
   - `backend/app/services/sync_kline_service.py` — 编排三次 baostock 调用 + 合并为 `k_line_daily` 一行 3 组字段
   - `backend/tests/integration/test_sync_kline_service.py`（20 支 × 5 天）
 - **DoD**：
-  - [ ] 20 支样本股 × 5 天 K 线成功入库，含三种复权口径
+  - [ ] 20 支样本股 × 5 天未复权 K 线成功入库
   - [ ] `trade_status=0` 的停牌日行价格字段为 null
   - [ ] 幂等：重复同步同一区间不产生冲突
   - [ ] 生成 `data_update_task` 记录（`expected_count / success_count / missing_count / error_count` 全部有值）

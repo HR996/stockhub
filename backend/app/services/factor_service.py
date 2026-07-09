@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.core.errors import NotFoundError, ValidationError
 from app.models.k_line_daily import KLineDaily
+from app.models.stock_adj_factor import StockAdjFactor
 from app.models.stock_basic import StockBasic
 from app.models.sw_industry import SWIndustryClassify, SWIndustryMember
 from app.repositories.factor_repo import (
@@ -250,11 +251,15 @@ def _compute_stock_returns(
 
     StartK = aliased(KLineDaily)
     EndK = aliased(KLineDaily)
+    StartF = aliased(StockAdjFactor)
+    EndF = aliased(StockAdjFactor)
     stmt = (
-        select(StockBasic, SWIndustryMember, StartK, EndK)
+        select(StockBasic, SWIndustryMember, StartK, EndK, StartF, EndF)
         .join(SWIndustryMember, SWIndustryMember.ts_code == StockBasic.ts_code, isouter=True)
         .join(StartK, (StartK.ts_code == StockBasic.ts_code) & (StartK.trade_date == start_date), isouter=True)
         .join(EndK, (EndK.ts_code == StockBasic.ts_code) & (EndK.trade_date == basedate), isouter=True)
+        .join(StartF, (StartF.ts_code == StockBasic.ts_code) & (StartF.trade_date == start_date), isouter=True)
+        .join(EndF, (EndF.ts_code == StockBasic.ts_code) & (EndF.trade_date == basedate), isouter=True)
         .where(
             StockBasic.is_common.is_(True),
             StockBasic.is_bj.is_(False),
@@ -269,6 +274,8 @@ def _compute_stock_returns(
         member: SWIndustryMember | None = row[1]
         start_bar: KLineDaily | None = row[2]
         end_bar: KLineDaily | None = row[3]
+        start_factor: StockAdjFactor | None = row[4]
+        end_factor: StockAdjFactor | None = row[5]
         if stock.list_date is None:
             continue
         if sum(1 for d in open_days if d >= stock.list_date) < MIN_LISTED_DAYS:
@@ -276,8 +283,8 @@ def _compute_stock_returns(
         start_is_st = start_bar.is_st_row if start_bar is not None else None
         if (bool(start_is_st) if start_is_st is not None else stock.is_st):
             continue
-        start_close = start_bar.close_qfq if start_bar is not None else None
-        end_close = end_bar.close_qfq if end_bar is not None else None
+        start_close = start_bar.close_raw if start_bar is not None else None
+        end_close = end_bar.close_raw if end_bar is not None else None
         stock_return: Decimal | None = None
         missing_reason: str | None = None
         if member is None:
@@ -286,10 +293,17 @@ def _compute_stock_returns(
             missing_reason = "NO_START_PRICE"
         elif end_close is None:
             missing_reason = "NO_END_PRICE"
+        elif start_factor is None or start_factor.adj_factor == 0:
+            missing_reason = "NO_START_ADJ_FACTOR"
+        elif end_factor is None or end_factor.adj_factor == 0:
+            missing_reason = "NO_END_ADJ_FACTOR"
         elif Decimal(start_close) <= 0:
             missing_reason = "INVALID_START_PRICE"
         else:
-            ratio = Decimal(end_close) / Decimal(start_close)
+            ratio = (
+                Decimal(end_close) * end_factor.adj_factor
+                / (Decimal(start_close) * start_factor.adj_factor)
+            )
             if params.return_method == "simple":
                 stock_return = ratio - Decimal("1")
             else:

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.core.deps import get_db
 from app.main import app
+from app.repositories.adj_factor_repo import AdjFactorRepo, AdjFactorUpsertRow
 from app.repositories.kline_repo import KLineRepo, KLineRow
 from app.repositories.market_cap_repo import MarketCapRepo, MarketCapUpsertRow
 from app.repositories.stock_repo import StockBasicRepo, StockBasicRow
@@ -112,6 +113,7 @@ def _seed_factor_universe(db) -> None:
     stock_rows: list[StockBasicRow] = []
     cap_rows: list[MarketCapUpsertRow] = []
     k_rows: list[KLineRow] = []
+    factor_rows: list[AdjFactorUpsertRow] = []
     member_rows: list[SWMemberRecord] = []
     returns = [Decimal("1.30"), Decimal("1.20"), Decimal("1.10"), Decimal("1.05"), Decimal("0.95"), Decimal("0.90")]
     for i, ratio in enumerate(returns, 1):
@@ -119,8 +121,12 @@ def _seed_factor_universe(db) -> None:
         stock_rows.append(StockBasicRow(code, f"sh.60000{i}", f"样本{i}", "SH", date(2024, 1, 1)))
         cap_rows.append(MarketCapUpsertRow(code, "baostock_synth", total_market_cap=Decimal("20000000000")))
         k_rows.extend([
-            KLineRow(ts_code=code, trade_date=date(2024, 1, 29), close_qfq=Decimal("10.00"), trade_status=1),
-            KLineRow(ts_code=code, trade_date=date(2024, 1, 31), close_qfq=Decimal("10.00") * ratio, trade_status=1),
+            KLineRow(ts_code=code, trade_date=date(2024, 1, 29), close_raw=Decimal("10.00"), trade_status=1),
+            KLineRow(ts_code=code, trade_date=date(2024, 1, 31), close_raw=Decimal("10.00") * ratio, trade_status=1),
+        ])
+        factor_rows.extend([
+            AdjFactorUpsertRow(code, date(2024, 1, 29), Decimal("1")),
+            AdjFactorUpsertRow(code, date(2024, 1, 31), Decimal("1")),
         ])
         l2_code = "802000.SI" if i <= 3 else "802100.SI"
         l2_name = "二级A" if i <= 3 else "二级B"
@@ -142,6 +148,7 @@ def _seed_factor_universe(db) -> None:
     StockBasicRepo(db).upsert_many(stock_rows)
     MarketCapRepo(db).upsert_many(cap_rows)
     KLineRepo(db).upsert_many(k_rows)
+    AdjFactorRepo(db).upsert_many(factor_rows)
     SWClassifyRepo(db).replace_all([
         SWClassifyRecord("801000.SI", "801000", "一级", "L1", None, True, "SW2021"),
         SWClassifyRecord("802000.SI", "802000", "二级A", "L2", "801000", True, "SW2021"),

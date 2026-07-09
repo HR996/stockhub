@@ -56,7 +56,7 @@ export function getStockDetail(tsCode: string): Promise<StockDetail> {
 
 export function getStockKline(
   tsCode: string,
-  params: { start?: string; end?: string; adjust?: "raw" | "qfq" | "hfq" },
-): Promise<{ ts_code: string; adjust: string; items: StockKlineItem[] }> {
+  params: { start?: string; end?: string; adjust?: "qfq" } = {},
+): Promise<{ ts_code: string; adjust: "qfq"; base_date: string; items: StockKlineItem[] }> {
   return apiGet(`/api/stocks/${tsCode}/kline`, params);
 }

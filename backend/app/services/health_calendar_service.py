@@ -7,9 +7,7 @@ For a given (year, month), classify each calendar day as:
 - `red`   — trading day, no coverage (actual == 0)
 
 Independently, a day may carry `has_anomaly=True` when at least one k_line_daily
-row for that date is non-suspended (`trade_status != 0`) but has ALL three close
-columns (close_raw, close_qfq, close_hfq) NULL — meaning no price data at all.
-A row with only some adjust-flags populated is NOT an anomaly.
+row for that date is non-suspended (`trade_status != 0`) but has `close_raw` NULL.
 
 Read-only service. No DB writes. Callers own the DB session.
 """

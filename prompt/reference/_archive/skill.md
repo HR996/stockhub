@@ -9,14 +9,6 @@ Skill是一系列指令、脚本和资源的集合，可以动态加载这些资
     "description": "Use this skill whenever the user wants to create, read, edit, or manipulate Word documents (.docx files). Triggers include: any mention of 'Word doc', 'word document', '.docx', or requests to produce professional documents with formatting like tables of contents, headings, page numbers, or letterheads. Also use when extracting or reorganizing content from .docx files, inserting or replacing images in documents, performing find-and-replace in Word files, working with tracked changes or comments, or converting content into a polished Word document. If the user asks for a 'report', 'memo', 'letter', 'template', or similar deliverable as a Word or .docx file, use this skill. Do NOT use for PDFs, spreadsheets, Google Docs, or general coding tasks unrelated to document generation."
   },
   {
-    "name": "generate-dockerfile",
-    "description": "生成Dockerfile文件，可为各种语言和框架生成遵循最佳实践（多阶段构建、层缓存、安全性）的Dockerfile。当用户要求"创建dockerfile"、"容器化应用"、"容器化"或"docker设置"时使用。"
-  },
-  {
-    "name": "make-deploy",
-    "description": "自动化部署 Skill.根据项目类型生成符合最佳实践的 Dockerfile（多阶段构建、最小镜像、安全优化），并自动放置到指定目录，最终调用智研交付流接口触发自动化部署流程。当用户说"部署我的项目"、"帮我部署"、"启动部署流程"时使用。"
-  },
-  {
     "name": "pdf",
     "description": "Use this skill whenever the user wants to do anything with PDF files. This includes reading or extracting text/tables from PDFs, combining or merging multiple PDFs into one, splitting PDFs apart, rotating pages, adding watermarks, creating new PDFs, filling PDF forms, encrypting/decrypting PDFs, extracting images, and OCR on scanned PDFs to make them searchable. If the user mentions a .pdf file or asks to produce one, use this skill."
   },

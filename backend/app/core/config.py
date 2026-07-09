@@ -10,7 +10,7 @@ from dataclasses import dataclass
 class Settings:
     app_name: str = "istock"
     app_version: str = "0.1.0"
-    database_url: str = "postgresql+psycopg://istock:istock@postgres:5432/istock"
+    database_url: str = "postgresql+psycopg://istock:istock@localhost:5432/istock"
     preconfigured_users: tuple[str, ...] = ("admin",)
     admin_password_hash: str = ""
     scheduler_enabled: bool = False

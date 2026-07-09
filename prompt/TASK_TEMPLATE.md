@@ -56,7 +56,7 @@ US-x.y（列出本任务实现或部分实现的用户故事编号）
 
 ## 测试提示
 - 用 factory-boy 生成 fixture
-- 集成测试跑真实 PG（docker-compose 已提供）
+- 集成测试跑真实 PostgreSQL
 - 幂等性用同参数调两次断言行数不变
 
 ## 附加说明（可选）
@@ -93,7 +93,7 @@ US-x.y（列出本任务实现或部分实现的用户故事编号）
 
 ### 测试提示
 - 单元测试：factory-boy + fake 数据
-- 集成测试：真 PG（docker-compose 环境）
+- 集成测试：真实 PostgreSQL 环境
 - 打通外部 API 的测试：默认打真接口，跑得慢就打 `@pytest.mark.integration`
 
 ---
@@ -129,7 +129,7 @@ US-2.1、US-2.2、US-2.3
 - backend/tests/unit/test_repositories.py（新建）
 
 ## DoD
-- [ ] docker-compose up 后 alembic upgrade head 通过
+- [ ] PostgreSQL 启动后 alembic upgrade head 通过
 - [ ] 4 个 Repository 分别支持 upsert（幂等）与基础查询
 - [ ] pytest 全绿；ruff / mypy 无告警
 - [ ] Repository 只暴露领域方法（不返回 Query 对象）

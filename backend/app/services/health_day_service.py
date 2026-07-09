@@ -3,8 +3,7 @@
 For a given trading day, compute:
 - expected_count : count of active common stocks on that day
 - actual_count   : distinct ts_code with a k_line_daily row on that day
-- error_count    : count of ts_codes whose row is anomalous
-                   (trade_status != 0 AND all three close columns are NULL)
+- error_count    : count of ts_codes whose raw row is anomalous
 - success_count  : actual_count - error_count
 - missing_count  : expected_count - actual_count
 - missing_ts_codes / error_ts_codes : capped at MAX_LISTED_CODES for front-end display

@@ -84,7 +84,7 @@
 | --- | --- | --- |
 | `auth_service.py` | 登录校验、会话管理、敏感操作密码校验、日志写入 | US-1.1 ~ US-1.4 |
 | `sync_basic_service.py` | 股票基础信息 / 交易日历同步的编排 | US-2.1 |
-| `sync_kline_service.py` | K 线同步的编排（含三种复权口径） | US-2.1、US-2.2、US-2.3 |
+| `sync_kline_service.py` | Legacy Baostock 未复权 K 线同步 | US-2.1、US-2.2、US-2.3 |
 | `sync_market_cap_service.py` | 最新市值同步（走 akshare 兜底） | US-2.4 |
 | `health_service.py` | 数据健康状态计算（表状态、月历、单日详情） | US-3.1 ~ US-3.4 |
 | `browse_service.py` | 表数据浏览的分页 / 排序 / 筛选逻辑 | US-4.1、US-4.2 |
@@ -328,7 +328,7 @@ Router → Service → Repository → Database
 | US-1.3 关键操作日志 | `core/logging`、`repositories/audit_log_repo` |
 | US-1.4 敏感操作密码 | `api/auth`、`services/auth_service`、`AdminPasswordModal` |
 | US-2.1 后台自动更新 | `services/scheduler`、`sync_basic_service`、`sync_kline_service`、`sync_market_cap_service`、`adapters/baostock_adapter`、`adapters/akshare_adapter` |
-| US-2.2 三种复权 | `sync_kline_service`、`baostock_adapter`、`kline_repo` |
+| US-2.2 动态复权 | `data_service`、`stock_adj_factor`、`qfq_cache_repo` |
 | US-2.3 3 年留存 | `sync_kline_service`、`kline_repo` |
 | US-2.4 最新市值 | `sync_market_cap_service`、`akshare_adapter`、`market_cap_repo` |
 | US-3.1 状态总览 | `api/health`、`health_service`、多个 repo 的状态查询 |
@@ -414,7 +414,7 @@ frontend/
 | 项 | 转交去向 |
 | --- | --- |
 | 数据库选型（DuckDB / PostgreSQL / 其他） | 04_TECH_STACK.md ADR |
-| K 线三口径存 3 张表 vs 一张表 3 组字段 | 05_DATA_MODEL.md ADR |
+| K 线事实与复权派生数据如何分离 | 05_DATA_MODEL.md ADR-K01 |
 | Alembic vs DuckDB 原生 SQL 迁移 | 04_TECH_STACK.md（依赖 DB 选型） |
 | 因子结果失效标记的具体触发点 | 05_DATA_MODEL.md（`factor_result.stale` 字段 + 触发路径 audit） |
 | 前端登录桩：`X-User` header vs Cookie | 04_TECH_STACK.md |

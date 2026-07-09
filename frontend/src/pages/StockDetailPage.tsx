@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Card, Descriptions, Radio, Space, Spin, Tag, Typography } from "antd";
+import { Alert, Card, Descriptions, Space, Spin, Tag, Typography } from "antd";
 import ReactECharts from "echarts-for-react";
 import { useParams } from "react-router-dom";
 
@@ -11,17 +11,16 @@ export default function StockDetailPage() {
   const { tsCode = "" } = useParams();
   const [detail, setDetail] = useState<StockDetail | null>(null);
   const [kline, setKline] = useState<StockKlineItem[]>([]);
-  const [adjust, setAdjust] = useState<"raw" | "qfq" | "hfq">("qfq");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([getStockDetail(tsCode), getStockKline(tsCode, { adjust })])
+    Promise.all([getStockDetail(tsCode), getStockKline(tsCode)])
       .then(([d, k]) => { setDetail(d); setKline(k.items); })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [tsCode, adjust]);
+  }, [tsCode]);
 
   if (loading) return <Spin />;
   if (error || !detail) return <Alert type="error" message={error ?? "加载失败"} />;
@@ -46,7 +45,7 @@ export default function StockDetailPage() {
           </Descriptions.Item>
         </Descriptions>
       </Card>
-      <Card size="small" title="K 线" extra={<Radio.Group value={adjust} onChange={(e) => setAdjust(e.target.value)} options={[{ label: "不复权", value: "raw" }, { label: "前复权", value: "qfq" }, { label: "后复权", value: "hfq" }]} />}>
+      <Card size="small" title="K 线（最新基准日前复权）">
         <ReactECharts
           style={{ height: 360 }}
           option={{

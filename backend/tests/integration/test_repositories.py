@@ -101,9 +101,7 @@ def _kline_row(day: int) -> KLineRow:
         ts_code="600000.SH",
         trade_date=date(2026, 1, day),
         trade_status=1,
-        close_qfq=Decimal("10.00"),
         close_raw=Decimal("10.00"),
-        close_hfq=Decimal("10.00"),
         volume=Decimal("1000000"),
     )
 
@@ -129,14 +127,14 @@ def test_kline_upsert_updates_price_columns(db) -> None:
         ts_code="600000.SH",
         trade_date=date(2026, 1, 2),
         trade_status=1,
-        close_qfq=Decimal("11.11"),
+        close_raw=Decimal("11.11"),
     )
     repo.upsert_many([updated])
     db.commit()
 
     row = repo.get("600000.SH", date(2026, 1, 2))
     assert row is not None
-    assert row.close_qfq == Decimal("11.1100")
+    assert row.close_raw == Decimal("11.1100")
 
 
 def test_kline_list_by_stock_range(db) -> None:

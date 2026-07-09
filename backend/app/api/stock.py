@@ -37,7 +37,7 @@ def stock_kline(
     ts_code: str,
     start: str | None = Query(None),
     end: str | None = Query(None),
-    adjust: str = Query("qfq"),
+    adjust: str = Query("qfq", pattern="^qfq$"),
     db: Session = Depends(get_db),
     user: str = Depends(get_current_user),
 ) -> dict:

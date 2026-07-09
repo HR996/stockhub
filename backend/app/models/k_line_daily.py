@@ -1,4 +1,4 @@
-"""k_line_daily — 日 K 线（对齐 docs/05_DATA_MODEL.md §4.3, ADR-K01：三口径一表 3 组字段）."""
+"""k_line_daily — canonical unadjusted daily K-line facts."""
 
 from __future__ import annotations
 
@@ -32,18 +32,6 @@ class KLineDaily(Base):
     low_raw: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
     close_raw: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
     preclose_raw: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
-
-    open_qfq: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
-    high_qfq: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
-    low_qfq: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
-    close_qfq: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
-    preclose_qfq: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
-
-    open_hfq: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
-    high_hfq: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
-    low_hfq: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
-    close_hfq: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
-    preclose_hfq: Mapped[Decimal | None] = mapped_column(PRICE, nullable=True)
 
     volume: Mapped[Decimal | None] = mapped_column(VOL, nullable=True)
     amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)

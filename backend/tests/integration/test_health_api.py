@@ -67,7 +67,7 @@ def test_health_summary_reports_counts_and_timestamps(client, db) -> None:
     ])
     KLineRepo(db).upsert_many([
         KLineRow(ts_code="600000.SH", trade_date=date(2024, 1, 2),
-                 close_qfq=Decimal("10.00")),
+                 close_raw=Decimal("10.00")),
     ])
     MarketCapRepo(db).upsert_many([
         MarketCapUpsertRow(ts_code="600000.SH", market_cap_source="baostock_synth",

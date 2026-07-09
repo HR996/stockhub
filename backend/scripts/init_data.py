@@ -8,9 +8,9 @@ Usage:
 
 from __future__ import annotations
 
-import sys
-import os
 import logging
+import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -22,8 +22,8 @@ def main() -> None:
     from app.adapters.baostock_adapter import baostock_session
     from app.core.db import session_scope
     from app.repositories.stock_repo import StockBasicRepo
-    from app.repositories.trade_cal_repo import TradeCalRepo
     from app.repositories.task_log_repo import TaskLogRepo
+    from app.repositories.trade_cal_repo import TradeCalRepo
     from app.services.sync_basic_service import sync_stock_basic, sync_trade_calendar
 
     with baostock_session():

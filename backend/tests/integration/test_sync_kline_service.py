@@ -67,8 +67,8 @@ def test_sync_kline_20_stocks_five_days(bs_session, db) -> None:
     assert latest.success_count == 20
 
 
-def test_sync_kline_stores_all_three_adjust_flags(bs_session, db) -> None:
-    """One stock, one trading day: verify raw/qfq/hfq all populated with sensible prices."""
+def test_sync_kline_stores_raw_prices(bs_session, db) -> None:
+    """Legacy sync persists only raw prices."""
     kline_repo = KLineRepo(db)
     task_repo = TaskLogRepo(db)
 
@@ -82,36 +82,26 @@ def test_sync_kline_stores_all_three_adjust_flags(bs_session, db) -> None:
 
     row = kline_repo.get("600000.SH", date(2024, 1, 2))
     assert row is not None
-    # All three flags should have real closing prices (浦发 in Jan 2024)
     assert row.close_raw is not None and row.close_raw > 0
-    assert row.close_qfq is not None and row.close_qfq > 0
-    assert row.close_hfq is not None and row.close_hfq > 0
-    # In Jan 2024, hfq > raw > qfq is typical for a bank stock post-dividend history
     assert row.trade_status == 1
     assert row.volume is not None and row.volume > 0
 
 
 def test_sync_kline_is_idempotent(bs_session, db) -> None:
     """Idempotency: first run hits baostock; second run replays cached rows."""
-    from app.adapters.baostock_adapter import (
-        ADJUST_HFQ,
-        ADJUST_QFQ,
-        ADJUST_RAW,
-        fetch_kline,
-    )
+    from app.adapters.baostock_adapter import ADJUST_RAW, fetch_kline
 
     kline_repo = KLineRepo(db)
     task_repo = TaskLogRepo(db)
     codes = ["600000.SH", "000001.SZ"]
     start, end = date(2024, 1, 2), date(2024, 1, 5)
 
-    # Cache real responses once (2 stocks × 3 flags = 6 real calls total).
+    # Cache real raw responses once.
     cache: dict[tuple[str, str], list] = {}
     for ts in codes:
         num, market = ts.split(".", 1)
         bs_code = f"{market.lower()}.{num}"
-        for flag in (ADJUST_RAW, ADJUST_QFQ, ADJUST_HFQ):
-            cache[(bs_code, flag)] = fetch_kline(bs_code, start, end, flag)
+        cache[(bs_code, ADJUST_RAW)] = fetch_kline(bs_code, start, end, ADJUST_RAW)
 
     def replay(bs_code, s, e, flag):
         return cache[(bs_code, flag)]

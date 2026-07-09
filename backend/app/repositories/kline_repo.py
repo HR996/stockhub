@@ -6,7 +6,6 @@ from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -16,17 +15,8 @@ from app.core.db import chunked
 from app.models.k_line_daily import KLineDaily
 from app.models.stock_basic import StockBasic
 
-# Adjust mode names used as human-readable keys throughout the sync pipeline.
-AdjustMode = Literal["raw", "qfq", "hfq"]
-
-_COLS_BY_MODE: dict[str, tuple[str, ...]] = {
-    "raw": ("open_raw", "high_raw", "low_raw", "close_raw", "preclose_raw"),
-    "qfq": ("open_qfq", "high_qfq", "low_qfq", "close_qfq", "preclose_qfq"),
-    "hfq": ("open_hfq", "high_hfq", "low_hfq", "close_hfq", "preclose_hfq"),
-}
-
-# Columns always updated regardless of adjust_flags (meta + volume fields)
-_COMMON_COLUMNS: tuple[str, ...] = (
+_UPSERT_COLUMNS: tuple[str, ...] = (
+    "open_raw", "high_raw", "low_raw", "close_raw", "preclose_raw",
     "trade_status", "is_st_row", "volume", "amount", "turn", "pct_chg",
 )
 
@@ -44,25 +34,13 @@ class KLineRow:
     close_raw: Decimal | None = None
     preclose_raw: Decimal | None = None
 
-    open_qfq: Decimal | None = None
-    high_qfq: Decimal | None = None
-    low_qfq: Decimal | None = None
-    close_qfq: Decimal | None = None
-    preclose_qfq: Decimal | None = None
-
-    open_hfq: Decimal | None = None
-    high_hfq: Decimal | None = None
-    low_hfq: Decimal | None = None
-    close_hfq: Decimal | None = None
-    preclose_hfq: Decimal | None = None
-
     volume: Decimal | None = None
     amount: Decimal | None = None
     turn: Decimal | None = None
     pct_chg: Decimal | None = None
 
 
-_COLS = 23  # dataclass fields incl. ts_code + trade_date
+_COLS = 13
 
 
 class KLineRepo:
@@ -72,29 +50,17 @@ class KLineRepo:
     def upsert_many(
         self,
         rows: Iterable[KLineRow],
-        adjust_flags: list[AdjustMode] | None = None,
     ) -> int:
-        """Upsert rows into k_line_daily.
-
-        When adjust_flags is given, only the price columns for those adjust modes
-        are written on conflict; columns for other modes are left unchanged in DB.
-        Common columns (trade_status, is_st_row, volume, etc.) are always updated.
-        """
+        """Idempotently upsert canonical unadjusted rows."""
         payload = [asdict(r) for r in rows]
         if not payload:
             return 0
-
-        modes: list[str] = adjust_flags if adjust_flags is not None else ["raw", "qfq", "hfq"]
-        price_cols: tuple[str, ...] = tuple(
-            col for mode in modes for col in _COLS_BY_MODE[mode]
-        )
-        upsert_cols = _COMMON_COLUMNS + price_cols
 
         for batch in chunked(payload, columns_per_row=_COLS):
             stmt = insert(KLineDaily).values(batch)
             stmt = stmt.on_conflict_do_update(
                 index_elements=[KLineDaily.ts_code, KLineDaily.trade_date],
-                set_={col: stmt.excluded[col] for col in upsert_cols},
+                set_={col: stmt.excluded[col] for col in _UPSERT_COLUMNS},
             )
             self._session.execute(stmt)
         return len(payload)
@@ -147,9 +113,7 @@ class KLineRepo:
     def anomaly_dates_in_range(self, start: date, end: date) -> set[date]:
         """Trade dates in [start, end] with at least one anomalous common-stock row.
 
-        Anomaly = trade_status != 0 (not suspended) but ALL three close columns
-        (raw/qfq/hfq) are NULL — meaning no price data at all.
-        A row with only some adjust-flags populated is not anomalous.
+        Anomaly = trade_status != 0 (not suspended) but close_raw is NULL.
         """
         stmt = (
             select(func.distinct(KLineDaily.trade_date))
@@ -158,8 +122,6 @@ class KLineRepo:
             .where(KLineDaily.trade_date.between(start, end))
             .where(KLineDaily.trade_status != 0)
             .where(KLineDaily.close_raw.is_(None))
-            .where(KLineDaily.close_qfq.is_(None))
-            .where(KLineDaily.close_hfq.is_(None))
         )
         return {row[0] for row in self._session.execute(stmt).all()}
 
@@ -174,7 +136,7 @@ class KLineRepo:
         return {row[0] for row in self._session.execute(stmt).all()}
 
     def anomaly_ts_codes_on(self, day: date) -> set[str]:
-        """Common-stock ts_codes on `day` where trade_status != 0 but ALL three close columns are NULL."""
+        """Common-stock ts_codes on `day` where trade_status != 0 but close_raw is NULL."""
         stmt = (
             select(func.distinct(KLineDaily.ts_code))
             .join(StockBasic, StockBasic.ts_code == KLineDaily.ts_code)
@@ -182,8 +144,6 @@ class KLineRepo:
             .where(KLineDaily.trade_date == day)
             .where(KLineDaily.trade_status != 0)
             .where(KLineDaily.close_raw.is_(None))
-            .where(KLineDaily.close_qfq.is_(None))
-            .where(KLineDaily.close_hfq.is_(None))
         )
         return {row[0] for row in self._session.execute(stmt).all()}
 

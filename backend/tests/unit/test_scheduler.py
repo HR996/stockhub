@@ -79,6 +79,7 @@ def test_run_daily_sync_all_success() -> None:
         "trade_cal": "SUCCESS",
         "kline": "SUCCESS",
         "market_cap": "SUCCESS",
+        "qfq_cache": "SUCCESS",
     }
     assert r.quota_exhausted is False
 

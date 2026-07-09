@@ -113,7 +113,7 @@ frontend/src/
 - baostock adjustflag：`1=后复权 / 2=前复权 / 3=不复权`；因子用 **2**
 - baostock 停牌日返回空价格 → `trade_status=0` + 价格 null
 - xls 必须用 `xlrd==1.2.0`；2.0+ 已移除 xls 支持
-- rar 解压需系统装 `unrar`（Dockerfile 层面，不是 pip）
+- rar 解压需在操作系统安装 `unrar`（不是 pip 依赖）
 - 申万版本 `is_current` 用 PG 部分唯一索引保证同时只有一个当前版本
 - K 线三口径存**一表 3 组字段**（不拆 3 张表）
 
