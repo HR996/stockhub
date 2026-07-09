@@ -69,6 +69,7 @@ log "检查服务状态"
 sudo systemctl --no-pager --full status istock nginx postgresql || true
 
 log "验证健康检查"
+sleep 5 # 等待服务启动
 curl --fail --silent --show-error http://127.0.0.1/api/health
 echo
 
