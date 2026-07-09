@@ -1,8 +1,9 @@
 # tcloud 生产部署手册
 
 本文记录将本地 istock 数据库和应用部署到 Ubuntu 服务器的完整流程。
-当前生产目录为 `/home/ubuntu/stockhub`，nginx 对外监听 80 端口，
-FastAPI 仅监听 `127.0.0.1:8000`，PostgreSQL 仅使用本机连接。
+当前生产目录为 `/home/ubuntu/stockhub`，前端构建产物发布到
+`/var/www/istock`。nginx 对外监听 80 端口，FastAPI 仅监听
+`127.0.0.1:8000`，PostgreSQL 仅使用本机连接。
 
 ## 1. 服务器依赖
 
@@ -136,8 +137,9 @@ chmod +x deploy/deploy.sh
 2. `uv sync --frozen --no-dev`；
 3. `alembic upgrade head`；
 4. `npm ci`、类型检查及 Vite 生产构建；
-5. 安装 systemd/nginx 配置；
-6. 启动服务并请求健康检查。
+5. 将前端静态文件发布到 `/var/www/istock`；
+6. 安装 systemd/nginx 配置；
+7. 启动服务并等待健康检查通过。
 
 手工查看状态：
 

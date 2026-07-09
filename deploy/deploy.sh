@@ -53,6 +53,13 @@ npm run typecheck
 log "构建前端生产产物"
 npm run build
 
+log "发布前端静态文件"
+sudo install -d -o root -g www-data -m 0755 /var/www/istock
+sudo rsync -a --delete "$PROJECT_DIR/frontend/dist/" /var/www/istock/
+sudo chown -R root:www-data /var/www/istock
+sudo find /var/www/istock -type d -exec chmod 0755 {} +
+sudo find /var/www/istock -type f -exec chmod 0644 {} +
+
 log "安装 systemd 和 nginx 配置"
 sudo install -m 0644 "$PROJECT_DIR/deploy/istock.service" /etc/systemd/system/istock.service
 sudo install -m 0644 "$PROJECT_DIR/deploy/nginx-istock.conf" /etc/nginx/sites-available/istock
@@ -68,10 +75,24 @@ sudo systemctl restart istock nginx
 log "检查服务状态"
 sudo systemctl --no-pager --full status istock nginx postgresql || true
 
-log "验证健康检查"
-sleep 5 # 等待服务启动
-curl --fail --silent --show-error http://127.0.0.1/api/health
-echo
+log "等待后端启动并验证健康检查"
+health_ok=false
+for attempt in {1..30}; do
+    if curl --fail --silent --show-error http://127.0.0.1/api/health; then
+        echo
+        health_ok=true
+        break
+    fi
+
+    log "健康检查尚未通过（${attempt}/30），2 秒后重试"
+    sleep 2
+done
+
+if [[ "$health_ok" != true ]]; then
+    log "健康检查超时，输出 istock 最近日志"
+    sudo journalctl -u istock -n 100 --no-pager
+    exit 1
+fi
 
 log "部署成功"
 log "完整日志：$LOG_FILE"
