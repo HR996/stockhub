@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-/home/ubuntu/stockhub}"
 UV="${UV:-/home/ubuntu/.local/bin/uv}"
-LOG_DIR="${LOG_DIR:-$PROJECT_DIR/var/log}"
+LOG_DIR="${LOG_DIR:-$PROJECT_DIR/log}"
 LOG_FILE="${LOG_FILE:-$LOG_DIR/deploy-$(date '+%Y%m%d-%H%M%S').log}"
 
 mkdir -p "$LOG_DIR"
