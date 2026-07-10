@@ -2,8 +2,9 @@
 
 本文记录将本地 istock 数据库和应用部署到 Ubuntu 服务器的完整流程。
 当前生产目录为 `/home/ubuntu/stockhub`，前端构建产物发布到
-`/var/www/istock`。nginx 对外监听 80 端口，FastAPI 仅监听
+`/var/www/istock`。nginx 对外监听 80/443 端口，FastAPI 仅监听
 `127.0.0.1:8000`，PostgreSQL 仅使用本机连接。
+生产域名为 `julyquant.site`。
 
 ## 1. 服务器依赖
 
@@ -11,7 +12,8 @@
 ssh tcloud
 sudo apt-get update
 sudo apt-get install -y \
-  postgresql postgresql-client nginx nodejs npm curl ca-certificates
+  postgresql postgresql-client nginx nodejs npm curl ca-certificates \
+  certbot python3-certbot-nginx
 
 curl -LsSf https://astral.sh/uv/install.sh -o /tmp/uv-installer.sh
 sh /tmp/uv-installer.sh
@@ -121,7 +123,59 @@ SCHEDULER_SW_MINUTE=7
 chmod 600 /home/ubuntu/stockhub/backend/.env
 ```
 
-## 5. 安装、构建和启动
+## 5. 域名解析和 HTTPS
+
+腾讯云域名 `julyquant.site` 需要先完成备案和 DNS 解析。当前服务器公网 IP：
+
+```text
+124.220.55.215
+```
+
+在腾讯云 DNS 解析中添加：
+
+| 主机记录 | 记录类型 | 记录值 |
+| --- | --- | --- |
+| `@` | `A` | `124.220.55.215` |
+| `www` | `A` | `124.220.55.215` |
+
+腾讯云安全组开放 TCP `22`、`80`、`443`，不要开放 `5432` 或 `8000`。
+
+首次启用 HTTPS 的顺序：
+
+```bash
+ssh tcloud
+cd /home/ubuntu/stockhub
+./deploy/deploy.sh
+
+sudo certbot --nginx \
+  -d julyquant.site \
+  -d www.julyquant.site \
+  --redirect
+
+./deploy/deploy.sh
+```
+
+第一次执行 `deploy.sh` 时，如果证书还不存在，脚本会安装
+`deploy/nginx-istock-http-bootstrap.conf`，用于通过 HTTP 访问和完成
+Let's Encrypt 域名验证。证书签发成功后再次执行 `deploy.sh`，脚本会自动切换到
+`deploy/nginx-istock.conf`，启用 HTTPS，并把 HTTP 请求 301 跳转到 HTTPS。
+
+验证：
+
+```bash
+curl -I http://julyquant.site
+curl https://julyquant.site/api/health
+sudo certbot renew --dry-run
+```
+
+浏览器访问：
+
+```text
+https://julyquant.site/
+https://julyquant.site/api/docs
+```
+
+## 6. 安装、构建和启动
 
 仓库提供了可重复执行的部署脚本：
 
@@ -138,7 +192,7 @@ chmod +x deploy/deploy.sh
 3. `alembic upgrade head`；
 4. `npm ci`、类型检查及 Vite 生产构建；
 5. 将前端静态文件发布到 `/var/www/istock`；
-6. 安装 systemd/nginx 配置；
+6. 安装 systemd/nginx 配置，证书存在时启用 HTTPS，否则使用 HTTP bootstrap 配置；
 7. 启动服务并等待健康检查通过。
 
 手工查看状态：
@@ -147,17 +201,17 @@ chmod +x deploy/deploy.sh
 sudo systemctl status istock nginx postgresql
 sudo journalctl -u istock -n 100 --no-pager
 curl http://127.0.0.1/api/health
-curl http://124.220.55.215/api/health
+curl https://julyquant.site/api/health
 ```
 
 浏览器访问：
 
 ```text
-http://124.220.55.215/
-http://124.220.55.215/api/docs
+https://julyquant.site/
+https://julyquant.site/api/docs
 ```
 
-## 6. 日常发布与回滚
+## 7. 日常发布与回滚
 
 发布前在本地完成测试并推送 Git 提交，然后在服务器执行：
 
@@ -183,11 +237,11 @@ sudo systemctl restart istock nginx
 
 Alembic 数据库迁移不应盲目降级。涉及 schema 回滚时，应先恢复发布前数据库备份。
 
-## 7. 安全和运维
+## 8. 安全和运维
 
-- 腾讯云安全组只需开放 TCP 22、80；配置域名和 TLS 后再开放 443。
+- 腾讯云安全组只需开放 TCP 22、80、443。
 - 不要开放 PostgreSQL 5432 或 FastAPI 8000。
 - `backend/.env` 权限保持为 `600`，不得提交到 Git。
-- 建议为站点绑定域名后使用 Certbot 配置 HTTPS。
+- HTTPS 证书由 Certbot/Let's Encrypt 维护，systemd timer 会自动续期；定期执行 `sudo certbot renew --dry-run` 验证续期链路。
 - 建议每日执行 `pg_dump --format=custom` 并将备份保存到异机或对象存储。
 - 定期检查 `df -h`、`systemctl status istock` 和 `journalctl -u istock`。

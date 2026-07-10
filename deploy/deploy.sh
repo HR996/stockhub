@@ -62,7 +62,12 @@ sudo find /var/www/istock -type f -exec chmod 0644 {} +
 
 log "安装 systemd 和 nginx 配置"
 sudo install -m 0644 "$PROJECT_DIR/deploy/istock.service" /etc/systemd/system/istock.service
-sudo install -m 0644 "$PROJECT_DIR/deploy/nginx-istock.conf" /etc/nginx/sites-available/istock
+if [[ -f /etc/letsencrypt/live/julyquant.site/fullchain.pem ]]; then
+    sudo install -m 0644 "$PROJECT_DIR/deploy/nginx-istock.conf" /etc/nginx/sites-available/istock
+else
+    log "未发现 julyquant.site 证书，使用 HTTP bootstrap nginx 配置"
+    sudo install -m 0644 "$PROJECT_DIR/deploy/nginx-istock-http-bootstrap.conf" /etc/nginx/sites-available/istock
+fi
 sudo ln -sfn /etc/nginx/sites-available/istock /etc/nginx/sites-enabled/istock
 sudo rm -f /etc/nginx/sites-enabled/default
 
