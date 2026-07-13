@@ -75,6 +75,18 @@ def test_tushare_session_without_token_raises_auth_error() -> None:
         pass
 
 
+def test_tushare_session_passes_token_without_writing_home_file() -> None:
+    pro = MagicMock()
+    tushare = SimpleNamespace(pro_api=MagicMock(return_value=pro))
+    with (
+        patch("app.adapters.tushare_adapter.settings", SimpleNamespace(tushare_token="secret-token")),
+        patch.dict("sys.modules", {"tushare": tushare}),
+        tushare_session() as result,
+    ):
+        assert result is pro
+    tushare.pro_api.assert_called_once_with("secret-token")
+
+
 def _fake_classify_df(level: str) -> pd.DataFrame:
     if level == "L1":
         return pd.DataFrame([

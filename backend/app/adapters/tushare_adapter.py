@@ -55,9 +55,13 @@ _DAILY_MAX_ROWS = 30_000
 
 @contextmanager
 def tushare_session() -> Iterator[Any]:
-    """Yield a `tushare.pro_api()` handle after setting the token.
+    """Yield a `tushare.pro_api()` handle using the configured token directly.
 
     Raises AdapterAuthError when TUSHARE_TOKEN is unset or Tushare rejects the token.
+
+    Passing the token to ``pro_api`` avoids ``ts.set_token()``: that helper writes
+    ``~/tk.csv``, which is intentionally unavailable to the hardened systemd
+    service (``ProtectHome=read-only``).
     """
     token = settings.tushare_token
     if not token:
@@ -67,8 +71,7 @@ def tushare_session() -> Iterator[Any]:
     except ImportError as exc:
         raise AdapterAuthError(f"tushare library not installed: {exc}") from exc
     try:
-        ts.set_token(token)
-        pro = ts.pro_api()
+        pro = ts.pro_api(token)
     except Exception as exc:
         raise _map_tushare_error(exc, "pro_api init") from exc
     yield pro
