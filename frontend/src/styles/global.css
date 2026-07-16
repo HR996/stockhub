@@ -236,6 +236,33 @@ body {
   padding: 24px 28px 40px;
 }
 
+.app-footer {
+  padding: 12px 28px 20px !important;
+  color: var(--ink-300) !important;
+  font-size: 12px;
+  text-align: center;
+  background: transparent !important;
+}
+.app-footer a {
+  color: var(--ink-500);
+}
+.app-footer a:hover {
+  color: var(--brand-2);
+}
+
+.login-icp-link {
+  position: fixed;
+  z-index: 1;
+  bottom: 20px;
+  left: 50%;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  transform: translateX(-50%);
+}
+.login-icp-link:hover {
+  color: #fff;
+}
+
 /* ---------- Cards ---------- */
 .ant-card {
   border-radius: 16px !important;

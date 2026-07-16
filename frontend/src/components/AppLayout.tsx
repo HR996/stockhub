@@ -18,7 +18,7 @@ import {
 
 import { useAuthStore } from "@/store/authStore";
 
-const { Sider, Content } = Layout;
+const { Sider, Content, Footer } = Layout;
 
 const MENU_ITEMS = [
   { key: "/", icon: <DashboardOutlined />, label: "数据看板" },
@@ -108,6 +108,11 @@ export default function AppLayout() {
             <Outlet />
           </div>
         </Content>
+        <Footer className="app-footer">
+          <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">
+            蜀ICP备2026039813号
+          </a>
+        </Footer>
       </Layout>
     </Layout>
   );

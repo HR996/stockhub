@@ -14,8 +14,8 @@ class Settings:
     preconfigured_users: tuple[str, ...] = ("admin",)
     admin_password_hash: str = ""
     scheduler_enabled: bool = False
-    scheduler_hour: int = 2
-    scheduler_minute: int = 30
+    scheduler_hour: int = 17
+    scheduler_minute: int = 0
     scheduler_triggered_by: str = "scheduler"
     tushare_token: str | None = None
     scheduler_sw_enabled: bool = False
@@ -32,8 +32,8 @@ class Settings:
             preconfigured_users=tuple(u.strip() for u in users.split(",") if u.strip()),
             admin_password_hash=os.getenv("ADMIN_PASSWORD_HASH", ""),
             scheduler_enabled=os.getenv("SCHEDULER_ENABLED", "false").lower() == "true",
-            scheduler_hour=int(os.getenv("SCHEDULER_HOUR", "2")),
-            scheduler_minute=int(os.getenv("SCHEDULER_MINUTE", "30")),
+            scheduler_hour=int(os.getenv("SCHEDULER_HOUR", "17")),
+            scheduler_minute=int(os.getenv("SCHEDULER_MINUTE", "0")),
             scheduler_triggered_by=os.getenv("SCHEDULER_TRIGGERED_BY", "scheduler"),
             tushare_token=token,
             scheduler_sw_enabled=os.getenv("SCHEDULER_SW_ENABLED", "false").lower() == "true",

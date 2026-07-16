@@ -67,6 +67,14 @@ export default function LoginPage() {
           v1 提示：常规用户无需密码，仅按 X-User 传递身份；管理员敏感操作走独立密码校验。
         </span>
       </div>
+      <a
+        className="login-icp-link"
+        href="https://beian.miit.gov.cn/"
+        target="_blank"
+        rel="noreferrer"
+      >
+        蜀ICP备2026039813号
+      </a>
     </div>
   );
 }
