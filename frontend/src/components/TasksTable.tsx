@@ -6,7 +6,7 @@
  */
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Card, Table, Tag } from "antd";
+import { Alert, Card, Table, Tag, Tooltip } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import type { SorterResult } from "antd/es/table/interface";
 import dayjs from "dayjs";
@@ -29,6 +29,25 @@ function isOrderField(v: unknown): v is OrderField {
 
 function fmt(ts: string | null): string {
   return ts ? dayjs(ts).format("YYYY-MM-DD HH:mm:ss") : "—";
+}
+
+function missingTitle() {
+  return (
+    <Tooltip title="日 K 更新任务中表示 Tushare daily 未返回日 K、已写入 trade_status=0 的无行情占位；常见原因包括当天停牌、新股/退市边界或数据源口径差异。其它任务中表示通用缺失数。">
+      <span>无行情/缺失</span>
+    </Tooltip>
+  );
+}
+
+function renderMissingCount(value: number | null, row: TaskRow) {
+  if (row.task_type !== "TUSHARE_UPDATE_DAILY" || !value) {
+    return value ?? "—";
+  }
+  return (
+    <Tooltip title="这些股票当天没有 daily 行，可能是停牌、新股/退市边界或数据源口径差异；已按 trade_status=0 写入占位，不代表任务失败。">
+      <span>{value}</span>
+    </Tooltip>
+  );
 }
 
 export default function TasksTable() {
@@ -57,7 +76,7 @@ export default function TasksTable() {
     { title: "结束时间", dataIndex: "finished_at", sorter: true, render: fmt, width: 180 },
     { title: "应处理", dataIndex: "expected_count", width: 100 },
     { title: "成功", dataIndex: "success_count", width: 90 },
-    { title: "缺失", dataIndex: "missing_count", width: 90 },
+    { title: missingTitle(), dataIndex: "missing_count", render: renderMissingCount, width: 120 },
     { title: "异常", dataIndex: "error_count", width: 90 },
     { title: "触发者", dataIndex: "created_by", width: 120 },
   ];
